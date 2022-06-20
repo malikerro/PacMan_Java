@@ -25,16 +25,20 @@ public class Model extends JPanel implements ActionListener {
     public final int MAXx = 64;
     public final int MINy = 4;
     public final int MAXy = 32;
+    private final int MAX_GHOST = 30;
+    private final int MIN_GHOST = 1;
     private final int CUBE_SIZE = 24;
     private int N_OF_CUBES_X;
     private int N_OF_CUBES_Y;
+    private int STARTING_SIZE_X;
+    private int STARTING_SIZE_Y;
+    private int STARTING_GHOSTS_NUM;
     private int MAP_SIZE_X;
     private int MAP_SIZE_Y;
     private int maxBlockWidth;
     private int maxBlockHeight;
-    private final int MAX_GHOST = 100;
-    private final int MIN_GHOST = 1;
     private final int PACMAN_SPEED = 4;
+    private double DISTANCE_TO_CHASE;
     private int N_OF_GHOST;
     // zmienne takie jak predkosci, polozenie,kierunki itd
     private int lives, score;
@@ -45,9 +49,10 @@ public class Model extends JPanel implements ActionListener {
     private Image up, down, left,right;
     private int pacmanX,pacmanY,pacmanDX,pacmanDY,pacmanCubeX,pacmanCubeY,ghostCubeX,ghostCubeY;
     private int dirDX,dirDY;
-    private final int validSpeed[] = {1,2,3,4,5,6};
+    private final int validSpeed[] = {1,2,3,3,3,4};
     private final int maxSpeed = 6;
     private int currentSpeed = 3;
+    private final int CURRENT_SPEED_START = 3;
     private short [] fieldValue;
     private Timer measureTime;
     private long startTime;
@@ -80,14 +85,18 @@ public class Model extends JPanel implements ActionListener {
     // konstruktor zawierajacy inicjalizacje poczatku gry
     public Model(int xDim, int yDim, int gNum)
     {
-        Random generator = new Random();
         this.N_OF_CUBES_X = xDim;
         this.N_OF_CUBES_Y = yDim;
         this.N_OF_GHOST = gNum;
+        this.STARTING_SIZE_X = xDim;
+        this.STARTING_SIZE_Y = yDim;
+        this.STARTING_GHOSTS_NUM = gNum;
         this.MAP_SIZE_X = N_OF_CUBES_X*CUBE_SIZE;
         this.MAP_SIZE_Y = N_OF_CUBES_Y*CUBE_SIZE;
-        maxBlockWidth = (int) N_OF_CUBES_X/MINx;
-        maxBlockHeight = (int) N_OF_CUBES_Y/MAXy;
+        this.maxBlockWidth = (int) N_OF_CUBES_X/MINx;
+        this.maxBlockHeight = (int) N_OF_CUBES_Y/MAXy;
+        this.DISTANCE_TO_CHASE = (xDim + yDim)/5.3;
+        System.out.println("distance to chase: " + DISTANCE_TO_CHASE);
         generateMap();
         generateObjects();
         initVariables();
@@ -154,9 +163,16 @@ public class Model extends JPanel implements ActionListener {
         {
             binMap[i] = 0;
         }
-
         divide(0, N_OF_CUBES_X-1, 0, N_OF_CUBES_Y-1, binMap, true);
 
+        for (int i = 0; i < N_OF_CUBES_X*N_OF_CUBES_Y; i++)
+        {
+            if (i % N_OF_CUBES_X == 0 || i % N_OF_CUBES_X == N_OF_CUBES_X - 1
+                    || i < N_OF_CUBES_X || i > N_OF_CUBES_X*(N_OF_CUBES_Y-1))
+            {
+                binMap[i] = 1; // wolne pola przy krawędziach
+            }
+        }
         return binMap;
     }
 
@@ -342,7 +358,6 @@ public class Model extends JPanel implements ActionListener {
                 pacmanDX=0;
                 pacmanDY=0;
             }
-
         }
         // poruszanie sie pacmana
         pacmanY=pacmanY + PACMAN_SPEED*pacmanDY;
@@ -398,6 +413,11 @@ public class Model extends JPanel implements ActionListener {
                 }
                 else if (key == KeyEvent.VK_ENTER && measureTime.isRunning()){
                     inProgress = false;
+                    N_OF_CUBES_X = STARTING_SIZE_X;
+                    N_OF_CUBES_Y = STARTING_SIZE_Y;
+                    N_OF_GHOST = STARTING_GHOSTS_NUM;
+                    currentSpeed = CURRENT_SPEED_START;
+                    gameOver();
                 }
 
             }
@@ -416,7 +436,8 @@ public class Model extends JPanel implements ActionListener {
                     startGame(lives);
                 }
             }
-
+            // code to lvl Up = shift + tilde
+            if (key == KeyEvent.VK_DEAD_TILDE) lvlUp();
         }
     }
 
@@ -427,6 +448,17 @@ public class Model extends JPanel implements ActionListener {
         private int id;
         Graphics2D graph2d;
 
+        private void drawMove(int count, int id)
+        {
+            // losowanie ruchu spośród wszystkich możliwych
+            int choose = (int)(Math.random()*count); // losowanie liczby od 0 do count
+            if (choose > 3)
+            {
+                choose = 3;
+            }
+            ghostDX[id]=dx[choose]; // zmiana ruchu
+            ghostDY[id]=dy[choose];
+        }
         public GhostRun(int id, Graphics2D g) {
             this.id = id;
             Graphics2D graph2d = g;
@@ -437,64 +469,131 @@ public class Model extends JPanel implements ActionListener {
         public void run() {
             int pos,count;
             int i = id;
+            double distance;
+            boolean left, right, up, down;
+
+            // Kontrola ruchu duszków
+            // Jest wywoływana kiedy duch nie znajduje się pomiędzy polami, co sprawdza poniższy warunek
             if(ghostX[i] % CUBE_SIZE == 0 && ghostY[i] % CUBE_SIZE==0)
             {
-                pos = ghostX[i]/CUBE_SIZE + N_OF_CUBES_X *(int)(ghostY[i]/CUBE_SIZE);
+                pos = ghostX[i]/CUBE_SIZE + N_OF_CUBES_X *(int)(ghostY[i]/CUBE_SIZE); // pozycja ducha (Y*maxX + X)
                 count = 0;
+                left = right = up = down = false;
+
+                // brak przeszkody po lewej, ruch w pionie
                 if((fieldValue[pos] & 1)==0 && ghostDX[i] != 1)
                 {
-                    dx[count]=-1;
-                    dy[count]=0;
+                    dx[count]=-1; // możliwy ruch w lewo
+                    dy[count]=0;  // zatrzymanie ruchu w pionie
+                    left = true;
                     count++;
                 }
+                // brak przeszkody u góry, ruch w poziomie
                 if((fieldValue[pos] & 2)==0 && ghostDY[i] != 1)
                 {
-                    dx[count]=0;
-                    dy[count]=-1;
+                    dx[count]=0;  // zatrzymanie ruchu w poziomie
+                    dy[count]=-1; // możliwy ruch w górę
+                    up = true;
                     count++;
                 }
+                // brak przeszkody po prawej, ruch w pionie
                 if((fieldValue[pos] & 4)==0 && ghostDX[i] != -1)
                 {
-                    dx[count]=1;
-                    dy[count]=0;
+                    dx[count]=1; // możliwy ruch w prawo
+                    dy[count]=0; // zatrzymanie ruchu w pionie
+                    right = true;
                     count++;
                 }
+                // brak przeszkody u dołu, ruch w poziomie
                 if((fieldValue[pos] & 8)==0 && ghostDY[i] != -1)
                 {
-                    dx[count]=0;
-                    dy[count]=1;
+                    dx[count]=0; // zatrzymanie ruchu w poziomie
+                    dy[count]=1; // możliwy ruch na dół
+                    down = true;
                     count++;
                 }
-                if(count == 0)
+                if(count == 0) // jeśli żaden ruch nie jest możliwy
                 {
-                    if((fieldValue[pos]&15)==15)
+                    if((fieldValue[pos]&15)==15) // jeśli jest na wolnym polu
                     {
-                        ghostDX[i]=0;
+                        ghostDX[i]=0; // zatrzymanie ruchu
                         ghostDY[i]=0;
                     }
-                    else{
-                        ghostDY[i]=-ghostDY[i];
-                        ghostDX[i]=-ghostDX[i];
+                    else // jeśli jest na zajętym polu
+                    {
+                        ghostDY[i] = -ghostDY[i]; // odwrócenie ruchu
+                        ghostDX[i] = -ghostDX[i];
 
                     }
                 }
-                else
+                else // jeśli jest możliwy ruch
                 {
-                    count=(int)(Math.random()*count);
-                    if (count>3)
+                    // jeśli znajdujemy się w pobliżu pacmana zaczynamy go gonić
+                    distance = Math.sqrt(Math.pow((ghostX[i]-pacmanX),2) + Math.pow((ghostY[i]-pacmanY),2))/CUBE_SIZE;
+                    if (distance <= DISTANCE_TO_CHASE)
                     {
-                        count=3;
+                        System.out.println(distance);
+                        if(pacmanX - ghostX[i] <= 0) //pacman po lewej
+                        {
+                            if (left)
+                            {
+                                ghostDX[i] = -1;
+                                ghostDY[i] = 0;
+                            }
+                            else if (pacmanY - ghostY[i] <= 0) //pacman u góry
+                            {
+                                if (up)
+                                {
+                                    ghostDX[i] = 0;
+                                    ghostDY[i] = -1;
+                                }
+                                else drawMove(count, i);
+                            }
+                            else // pacman na dole
+                            {
+                                if (down)
+                                {
+                                    ghostDX[i] = 0;
+                                    ghostDY[i] = 1;
+                                }
+                                else drawMove(count, i);
+                            }
+                        }
+                        else // pacman po prawej
+                        {
+                            if (right)
+                            {
+                                ghostDX[i] = 1;
+                                ghostDY[i] = 0;
+                            }
+                            else if (pacmanY - ghostY[i] <= 0) //pacman u góry
+                            {
+                                if (up)
+                                {
+                                    ghostDX[i] = 0;
+                                    ghostDY[i] = -1;
+                                }
+                                else drawMove(count, i);
+                            }
+                            else // pacman na dole
+                            {
+                                if (down)
+                                {
+                                    ghostDX[i] = 0;
+                                    ghostDY[i] = 1;
+                                }
+                                else drawMove(count, i);
+                            }
+                        }
                     }
-                    ghostDX[i]=dx[count];
-                    ghostDY[i]=dy[count];
-
+                    else drawMove(count, i);
                 }
             }
             ghostX[i]=ghostX[i]+(ghostDX[i]*ghostSpeed[i]);
             ghostY[i]=ghostY[i]+(ghostDY[i]*ghostSpeed[i]);
             drawGhost(graph2d, ghostX[i]+1,ghostY[i]+1);
 
-            //jesli dotknie pacmana
+            //jesli duszek dotknie pacmana
             if (pacmanX>(ghostX[i]-12)&&pacmanX<(ghostX[i]+12)
                     &&(pacmanY>(ghostY[i]-12)&&pacmanY<(ghostY[i]+12)) && inProgress)
             {
@@ -509,10 +608,11 @@ public class Model extends JPanel implements ActionListener {
         int dx = 1;
         int random;
         int i;
+
         for(i = 0; i < N_OF_GHOST; i++)
         {
-            ghostCubeX = N_OF_CUBES_X;
-            ghostCubeY = N_OF_CUBES_Y;
+            ghostCubeX = (int) N_OF_CUBES_X/2;
+            ghostCubeY = (int) N_OF_CUBES_Y/2;
             while (Map[ghostCubeY*N_OF_CUBES_X + ghostCubeX] == 0) {
                 if (ghostCubeX > 0) ghostCubeX--;
                 else {
@@ -525,11 +625,18 @@ public class Model extends JPanel implements ActionListener {
             ghostDY[i] = 0;
             ghostDX[i] = dx;
             dx = -dx;
-            random = (int)(Math.random()*(currentSpeed+1));
-            if(random>currentSpeed){
-                random = currentSpeed;
+        }
+
+        if (lives == START_LIVES)
+        {
+            for(i = 0; i < N_OF_GHOST; i++)
+            {
+                random = (int)(Math.random()*(currentSpeed+1));
+                if(random>currentSpeed){
+                    random = currentSpeed;
+                }
+                ghostSpeed[i] = validSpeed[random];
             }
-            ghostSpeed[i] = validSpeed[random];
         }
 
         pacmanCubeX = 0;
@@ -553,7 +660,7 @@ public class Model extends JPanel implements ActionListener {
 
     // MAPKA
     // funkcja odpowiedzialna za zbieranie punktow na mapce
-    public void checkMap()
+    private void checkMap()
     {
         int i=0;
         boolean finished = true;
@@ -561,39 +668,61 @@ public class Model extends JPanel implements ActionListener {
         while(i<N_OF_CUBES_X*N_OF_CUBES_Y && finished)
         {
 
-            if((fieldValue[i])!=0)
+            if((fieldValue[i])!=0 && (fieldValue[i] & 16) == 16)
             {
                 finished=false;
             }
             i++;
         }
-        if (finished)
-        {
-            // zwieksz ilosc duchow i ich predkosc
-            score+=50;
-            if(N_OF_GHOST<MAX_GHOST){
-                N_OF_GHOST++;
-            }
-            if(currentSpeed<maxSpeed)
-            {
-                currentSpeed++;
-            }
-            initMap();
+        if (finished) lvlUp();
+    }
+
+    private void lvlUp()
+    {
+        // zwieksz ilosc duchow i ich predkosc
+        score+=50;
+        if(N_OF_GHOST<MAX_GHOST){
+            N_OF_GHOST++;
         }
 
+        if(currentSpeed<maxSpeed)
+        {
+            //currentSpeed++;
+        }
+            /*
+            // zwiększ rozmiar mapy
+            if (N_OF_CUBES_X < MAXx) N_OF_CUBES_X++;
+            if (N_OF_CUBES_Y < MAXy) N_OF_CUBES_Y++;
+            this.MAP_SIZE_X = N_OF_CUBES_X*CUBE_SIZE;
+            this.MAP_SIZE_Y = N_OF_CUBES_Y*CUBE_SIZE;
+            this.maxBlockWidth = (int) N_OF_CUBES_X/MINx;
+            this.maxBlockHeight = (int) N_OF_CUBES_Y/MAXy;
+            this.DISTANCE_TO_CHASE = (N_OF_CUBES_X + N_OF_CUBES_Y)/5.3;
+            System.out.println("distance to chase: " + DISTANCE_TO_CHASE);
+             */
+        gameOver();
+        generateMap();
+        generateObjects();
+        initVariables();
+        startGame(START_LIVES);
+        inProgress = false;
     }
 
     private void gameOver()
     {
-        // po dotknieciu z duszkiem pacman traci jedno zycie
-        System.out.println("dead");
         // jezeli brak zyc to koniec gry
         if(lives == 0) {
             inProgress=false;
+            N_OF_CUBES_X = STARTING_SIZE_X;
+            N_OF_CUBES_Y = STARTING_SIZE_Y;
+            N_OF_GHOST = STARTING_GHOSTS_NUM;
+            currentSpeed = CURRENT_SPEED_START;
         }
         initCreatures();
         if (System.currentTimeMillis() - startTime > IMMORALITY_TIME) {
             lives--;
+            // po dotknieciu z duszkiem pacman traci jedno zycie
+            System.out.println("Death");
         }
     }
 
@@ -607,8 +736,8 @@ public class Model extends JPanel implements ActionListener {
         String message1 = "<-AWSD->, ENTER = retry, P = pause";
         graph2d.setColor(Color.CYAN);
         if(N_OF_CUBES_X < 12) {
-            graph2d.drawString(message, 10,MAP_SIZE_Y/2-20);
-            graph2d.drawString(message1, 15,MAP_SIZE_Y/2+20);
+            graph2d.drawString(message, 4,MAP_SIZE_Y/2-20);
+            graph2d.drawString(message1, 12,MAP_SIZE_Y/2+20);
         }
         else {
             graph2d.drawString(message, MAP_SIZE_X/2 - 140,MAP_SIZE_Y/2-20);
@@ -621,8 +750,8 @@ public class Model extends JPanel implements ActionListener {
         graph2d.setFont(smallFont);
         graph2d.setColor(new Color(5,151,79));
         String s = "Your score: "+score;
-        if (N_OF_CUBES_X < 12) graph2d.drawString(s,180,MAP_SIZE_Y+16);
-        else graph2d.drawString(s,N_OF_CUBES_X*CUBE_SIZE - 120,MAP_SIZE_Y+16);
+        if (N_OF_CUBES_X < 12) graph2d.drawString(s,160,MAP_SIZE_Y+16);
+        else graph2d.drawString(s,N_OF_CUBES_X*CUBE_SIZE - 130,MAP_SIZE_Y+16);
         for (int i = 0;i<lives;i++)
         {
             graph2d.drawImage(live,i*28+8,MAP_SIZE_Y+1,this);

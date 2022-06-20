@@ -36,7 +36,7 @@ public class ButtonPanel extends JPanel implements ActionListener {
     static public final int MAXx = 64;
     static public final int MINy = 4;
     static public final int MAXy = 32;
-    private final int MAX_GHOST = 100;
+    private final int MAX_GHOST = 30;
     private final int MIN_GHOST = 1;
     public ButtonPanel() {
         initialize();
