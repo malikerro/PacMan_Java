@@ -41,7 +41,7 @@ public class Model extends JPanel implements ActionListener {
     private double DISTANCE_TO_CHASE;
     private int N_OF_GHOST;
     // zmienne takie jak predkosci, polozenie,kierunki itd
-    private int lives, score;
+    private int lives, score = 0, pointsOnMap;
     private final int START_LIVES = 5;
     private int [] dx,dy;
     private int [] ghostX,ghostY,ghostDX,ghostDY,ghostSpeed;
@@ -49,8 +49,8 @@ public class Model extends JPanel implements ActionListener {
     private Image up, down, left,right;
     private int pacmanX,pacmanY,pacmanDX,pacmanDY,pacmanCubeX,pacmanCubeY,ghostCubeX,ghostCubeY;
     private int dirDX,dirDY;
-    private final int validSpeed[] = {1,2,3,3,3,4};
-    private final int maxSpeed = 6;
+    private final int validSpeed[] = {1,4,2,3,3,3};
+    private final int maxSpeed = 5;
     private int currentSpeed = 3;
     private final int CURRENT_SPEED_START = 3;
     private short [] fieldValue;
@@ -264,7 +264,6 @@ public class Model extends JPanel implements ActionListener {
     {
         dead = false;
         lives = l;
-        score=0;
         initMap();
     }
 
@@ -417,6 +416,7 @@ public class Model extends JPanel implements ActionListener {
                     N_OF_CUBES_Y = STARTING_SIZE_Y;
                     N_OF_GHOST = STARTING_GHOSTS_NUM;
                     currentSpeed = CURRENT_SPEED_START;
+                    score = 0;
                     gameOver();
                 }
 
@@ -437,7 +437,19 @@ public class Model extends JPanel implements ActionListener {
                 }
             }
             // code to lvl Up = shift + tilde
-            if (key == KeyEvent.VK_DEAD_TILDE) lvlUp();
+            if (key == KeyEvent.VK_DEAD_TILDE)
+            {
+                pointsOnMap = 0;
+                for (int i = 0; i < N_OF_CUBES_X*N_OF_CUBES_Y; i++)
+                {
+                    if((fieldValue[i])!=0 && (fieldValue[i] & 16) == 16)
+                    {
+                        pointsOnMap++;
+                    }
+                }
+                score += pointsOnMap;
+                lvlUp();
+            }
         }
     }
 
@@ -717,6 +729,7 @@ public class Model extends JPanel implements ActionListener {
             N_OF_CUBES_Y = STARTING_SIZE_Y;
             N_OF_GHOST = STARTING_GHOSTS_NUM;
             currentSpeed = CURRENT_SPEED_START;
+            score = 0;
         }
         initCreatures();
         if (System.currentTimeMillis() - startTime > IMMORALITY_TIME) {
